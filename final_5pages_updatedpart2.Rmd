@@ -1,0 +1,436 @@
+---
+title:  "Assignment 2"
+author: 
+  - Constantin von Krogh (13986767)
+  - Laurenz Ruckensteiner (13762931)
+  - Antoni Wonka (14001128)
+  - Marko Põldma (13713833)
+date:   "14/03/2025"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls());  cat("\014")          # start with a clean sheet
+```
+
+## Part 1
+Pre processing
+```{r echo=FALSE}
+
+
+   
+mydata <- read.csv("~/Desktop/Amsterdam stuff/UVA/Econmetrics/assignment 2/Textile.csv")
+
+n      <- nrow(mydata)
+
+log_y <- log(mydata$y)
+log_l <- log(mydata$l)
+log_k <- log(mydata$k)
+
+
+```
+
+```{r fig.width=10, fig.height=3, echo=FALSE}
+par(mfrow = c(1, 2))
+plot(mydata$l, mydata$k,  main = "Original L vs. K", xlab = "L", ylab = "K")
+plot(log_l, log_k, main = "Log-transformed L vs. Log-transformed K", xlab = "log(L)", ylab = "log(K)")
+```
+
+### Question 1: Log-Linear Transformation of the Cobb-Douglas Model
+
+The given Cobb-Douglas production function is: \( y = \beta_1 \cdot l^{\beta_2} \cdot k^{\beta_3} \cdot e^{\varepsilon} \)
+
+Taking the natural logarithm on both sides: \(ln(y) = \ln(\beta_1) + \beta_2 \ln(l) + \beta_3 \ln(k) + \varepsilon \)
+
+Estimating this linear model gives us:
+
+```{r echo=TRUE}
+X <- cbind(1, log_l, log_k) 
+Y <- log_y
+
+XtX  <- t(X) %*% X
+XtY  <- t(X) %*% Y
+Beta <- solve(XtX) %*% XtY
+
+Y_pred_u <- X %*% Beta         
+residuals_u <- Y - Y_pred_u        
+SSR_u <- sum(residuals_u^2)   
+```
+```{r echo=FALSE}
+cat('beta_u:', Beta, '\n')
+cat('SSR_u:', SSR_u) 
+```
+$\beta_2 = 0.9078$: This means a 1% increase in labor (L) leads to approximately 0.91% increase in output (Y), holding capital constant.
+$\beta_3 = 0.2070$: This means a 1% increase in capital (K) results in a 0.21% increase in output, holding labor constant.
+$\beta_1 = 2.5747$:: The intercept is the expected log-output when both labor and capital inputs are at their baseline values.
+
+### Question 2: Testing for Constant Returns to Scale (CRS)
+In terms of the parameters in the Cobb-Douglas production function, constant return to scale means that the sum of the exponents of labor and capital in the production function equation is equal to 1
+
+\(H_0: \beta_2 + \beta_3 = 1\)
+
+```{r echo=TRUE}
+
+X_r <- cbind(1, (log_k - log_l))
+Y_r <- log_y - log_l
+beta_r <- solve(t(X_r) %*% X_r) %*% t(X_r) %*% Y_r
+
+Y_pred_r <- X_r %*% beta_r
+residuals_r <- Y_r - Y_pred_r
+SSR_r <- sum(residuals_r^2)
+```
+
+```{r echo=FALSE}
+cat("beta_r:", beta_r, "\n",
+    "SSR_r:", SSR_r, "\n")
+
+```
+
+We use the unrestricted models to construct the F-test:
+
+```{r echo=TRUE}
+J <- 1 #testing one constrain
+n <- nrow(mydata)
+K <- length(Beta)
+# F-statistic
+F_clac <- ((SSR_r - SSR_u) / J) / (SSR_u / (n - K))
+```
+```{r echo=FALSE}
+#results
+cat("F-Statistic:", round(F_clac, 5), "\n")
+
+#significant check
+alpha_levels <- c(0.01, 0.05, 0.10)
+crit_vals <- qf(1 - alpha_levels, J, n - K)
+```
+
+Next, we test the same hypothesis using the Wald test:
+
+
+```{r echo=TRUE}
+R <- matrix(c(0, 1, 1), nrow = 1)  # Null hypothesis: B2 + B3 = 1
+r <- 1 # Null hypothesis: B2 + B3 = 1
+vcov_matrix <- SSR_u / (n - K) * solve(t(X) %*% X)
+s_squared <- SSR_u / (n-K)
+#Wald Statistic
+midle <- solve(n * s_squared *  R %*% (solve(t(X) %*% X)) %*% t(R))
+wald <- n * t(R%*%Beta-r) %*% midle %*%  (R%*%Beta-r)
+```
+```{r echo=FALSE}
+cat("Wald Statistic:", round(wald, 5), "\n")
+
+alpha_levels <- c(0.01, 0.05, 0.10)
+crit_vals_wald <- qchisq(1 - alpha_levels, J)
+
+```
+
+Both the F-test and the Wald test lead to the rejection of the null hypothesis, indicating that the production function does not exhibit constant returns to scale. The computed F-statistic and Wald statistic are both 20.494, which are sufficiently large to reject CRS at the 1%, 5%, and 10% significance levels. For the Wald test we have the assumption that the estimators of the coefficients are asymptotically normally distributed, while for the F-test we need to assume homoskedasticity.
+
+### Question 3: Correlation Between b_2 and b_3
+
+```{r echo=FALSE}
+var_b1 <- vcov_matrix[2, 2]
+var_b2 <- vcov_matrix[3, 3]
+sd_b1 <- sqrt(var_b1)
+sd_b2 <- sqrt(var_b2)
+cov_b2_b3 <- vcov_matrix[2, 3]
+correlation <- cov_b2_b3 / (sd_b1 * sd_b2)
+```
+```{r echo=FALSE}
+# Display the results
+cat("Correlation between B2 and B3:", round(correlation, 4), "\n")
+```
+The correlation between the estimators is -0.7159, indicating a negative relationship between the two estimated coefficients.
+
+### Question 4: Breusch-Pagan Test for Heteroscedasticity (Using Original Regressors)
+
+We perform the Breusch-Pagan test to check for heteroscedasticity in the model, we test whether the assumption that the errors are homoskedastic holds.
+
+\(H_0:\)Errors are homoscedastic
+```{r echo=TRUE}
+squared_residuals <- residuals_u^2  
+X_aux <- cbind(1, log_l, log_k)  # auxiliary regression matrix
+beta_aux <- solve(t(X_aux) %*% X_aux) %*% t(X_aux) %*% squared_residuals  
+# coefficients of auxiliary regression
+Y_pred_aux <- X_aux %*% beta_aux  # predicted values from auxiliary regression
+residuals_aux <- squared_residuals - Y_pred_aux  # residuals of auxiliary regression
+r_squared <- 1 - sum(residuals_aux^2) / sum((squared_residuals - mean(squared_residuals))^2)
+
+p <- ncol(X_aux)  # number of predictors in the auxiliary regression
+LM <- n * r_squared  # test statistic
+df <- p - 1 # degrees of freedom
+p_value <- 1 - pchisq(LM, df = df) # p-value
+``` 
+```{r echo=FALSE}
+
+cat("Breusch-Pagan Test:\n",
+    "Test Statistic:", LM, "\n",
+    "Degrees of Freedom:", df, "\n",
+    "p-value:", p_value, "\n")
+```
+Since the p-value is above 0.10 we fail to reject at the 1, 5 and 10% significance level.
+This suggests that there is no evidence of heteroscedasticity based on the original regressors.
+
+### Question 5: Breusch-Pagan Test with Squared Terms
+```{r echo=FALSE}
+e_u <- residuals_u             # residuals from unrestricted model
+e_u_sq <- e_u^2                # squared residuals
+
+# Include Squared Terms
+log_l_sq <- log_l^2
+log_k_sq <- log_k^2
+
+# Auxiliary regression with squared terms
+Z_sq <- cbind(1, log_l, log_k, log_l_sq, log_k_sq)
+
+# OLS for extended auxiliary regression
+gamma_hat_sq <- solve(t(Z_sq) %*% Z_sq) %*% (t(Z_sq) %*% e_u_sq)
+y_aux_hat_sq <- Z_sq %*% gamma_hat_sq
+
+# Correct calculation of SSE and SST for R^2
+SSE_aux_sq <- sum((e_u_sq - y_aux_hat_sq)^2)
+SST_aux_sq <- sum((e_u_sq - mean(e_u_sq))^2)
+R2_aux_sq <- 1 - SSE_aux_sq / SST_aux_sq
+
+# Correct Breusch-Pagan LM Statistic
+LM_test_sq <- n * R2_aux_sq
+p_val_BP_sq <- 1 - pchisq(LM_test_sq, df = ncol(Z_sq) - 1)
+```
+
+```{r echo=FALSE}
+cat("Breusch-Pagan Test (Including Squared Terms):\n",
+    "Test Statistic:", sprintf("%.4f", LM_test_sq), "\n",
+    "Degrees of Freedom:", ncol(Z_sq) - 1, "\n",
+    "p-value:", sprintf("%.6f", p_val_BP_sq), "\n")
+```
+Since the p-value is less than 0.001, we reject the null hypothesis of homoscedasticity at the 1,5 and 10% level. This suggests that heteroscedasticity is present when the squared terms of the regressors are included.
+
+## Part 2
+
+
+```{r echo = FALSE}
+# Load required library
+library(MASS)
+
+set.seed(100) 
+n   = 500
+k   = 3
+MU  = c(50, 100)
+SIG = matrix(c(400, 0, 0, 200), 2, 2)
+X1  = mvrnorm(n, MU, SIG)
+X   = cbind( rep(1,n), X1 )
+
+XtX       = t(X) %*% X           # matrix with basic statistics (n, sum(x), sum(x^2))
+XXinv     = solve(XtX)           # matrix used in Variance of estimator b
+diagXXinv = diag(XXinv)          # the diagonal elements (for the variance of b)
+XXinvX    = XXinv %*% t(X)       # part of the estimator betahat that remains the same
+
+beta0 = c(2.5, 1, -0.1)          # parameters of the true model
+sigm0 = 1
+```
+
+### Question 1a: Analyzing Residuals
+
+```{r cars}
+eps   = rnorm(n, 0, sigm0)  # generate disturbances
+error = (X[,2] / 10) * eps  # Group 80: h(x1i, x2i) = x1i / 10
+y_sim  = X %*% beta0 + error
+
+betahat = XXinvX %*% y_sim  # estimate OLS coefficients
+y_fitted <- X %*% betahat
+residuals = y_sim - y_fitted
+
+```
+```{r echo=FALSE, fig.width=8, fig.height=3}
+par(mfrow=c(1,2))
+plot(X[,2], residuals, main="Residuals and x1", xlab="x1", ylab="Residuals", pch = 10, cex=0.2)
+abline(h=0, col="red")
+
+plot(X[,3], residuals, main="Residuals and x2", xlab="x2", ylab="Residuals", pch = 10, cex=0.2)
+abline(h=0, col="red")
+```
+
+The scatter plot for X1 clearly suggests heteroscadisticity (variance increases for higher fitter values). Let us now test the null hypothesis of homoscedasticity.
+
+### Question 1b: Breusch–Pagan Test
+
+```{r echo=TRUE}
+u2 <- residuals^2
+
+# regressors for the auxiliary model chosen the same as the OLS
+X_aux <- X
+beta_aux <- solve(t(X_aux) %*% X_aux) %*% t(X_aux) %*% u2
+pred_u2 <- X_aux %*% beta_aux
+SSR <- sum((u2 - pred_u2)^2)
+SST <- sum((u2 - mean(u2))^2)
+R_squared <- 1 - SSR/SST
+LM <- n * R_squared  # LM statistic
+
+alpha_levels <- c(0.01, 0.05, 0.10)        # testing at 1%, 5%, 10%
+critvals <- qchisq(1 - alpha_levels, df=2) # p-1 = 3-1 = 2 df
+p_value <- 1 - pchisq(LM, df=2)
+```
+```{r, echo=FALSE}
+cat(
+  "Breusch-Pagan Test Results:\n",
+  "LM Statistic:", round(LM, 3), "\n",
+  "p-value:", round(p_value, 5), "\n"
+)
+
+# Check significance at multiple levels
+for (i in 1:length(alpha_levels)) {
+  if (p_value < alpha_levels[i]) {
+    cat("At", alpha_levels[i] * 100, "% significance level: Reject null hypothesis of homoscedasticity\n")
+  } else {
+    cat("At", alpha_levels[i] * 100, "% significance level: Fail to reject null hypothesis of homoscedasticity\n")
+  }
+}
+```
+
+### Question 2: 10,000 Samples for Breusch–Pagan Test
+
+```{r echo=TRUE}
+nsim    = 10000
+LM      = rep(0, nsim)
+alfa    = 0.01
+critval = qchisq(1 - alfa, df=2)
+nreject = 0
+
+# See Rmd file for the whole code
+
+```
+```{r echo=FALSE}
+
+for (i in 1:nsim) {
+  # data generation
+  eps_sim <- rnorm(n, 0, sigm0)
+  error_sim <- (X[,2] / 10) * eps_sim
+  y_sim <- X %*% beta0 + error_sim
+  
+  # OLS estimation
+  betahat_sim <- solve(t(X) %*% X) %*% t(X) %*% y_sim
+  y_fitted <- X %*% betahat_sim
+  residuals_sim <- y_sim - y_fitted
+  u2_sim <- residuals_sim^2
+  
+  # auxiliary regression
+  X_aux <- X 
+  beta_aux_sim <- solve(t(X_aux) %*% X_aux) %*% t(X_aux) %*% u2_sim
+  pred_u2_sim <- X_aux %*% beta_aux_sim
+  
+  # calculating the statistic
+  SSR_sim <- sum((u2_sim - pred_u2_sim)^2)
+  SST_sim <- sum((u2_sim - mean(u2_sim))^2)
+  R_squared_sim <- 1 - SSR_sim/SST_sim
+  LM[i] = n * R_squared_sim
+  
+  if (LM[i] > critval) {
+    nreject <- nreject + 1
+  }
+}
+
+proportion_rejected <- nreject / nsim
+```
+```{r echo=FALSE}
+cat("Proportion of rejections of the null hypothesis of homoscedasticity in 10,000 simulations:", round(proportion_rejected * 100, 3), "%\n")
+```
+
+Regressors for the BP test chosen the same as in the original OLS model to examine whether the variance of residuals depends on the same explanatory variables
+
+### Question 3: 10,000 Samples for White Test
+
+```{r echo=TRUE}
+nsim    = 10000
+LM      = rep(0, nsim)
+alfa    = 0.01
+critval = qchisq(1 - alfa, df=3) # quadratic terms included so p-1 = 4-1 = 3
+nreject = 0
+
+# See Rmd file for the whole code
+```
+```{r echo=FALSE}
+for (i in 1:nsim) {
+  # data generation
+  eps_sim <- rnorm(n, 0, sigm0)
+  error_sim <- (X[,2] / 10) * eps_sim
+  y_sim <- X %*% beta0 + error_sim
+  
+  # OLS estimation
+  betahat_sim <- solve(t(X) %*% X) %*% t(X) %*% y_sim
+  y_fitted <- X %*% betahat_sim
+  residuals_sim <- y_sim - y_fitted
+  u2_sim <- residuals_sim^2
+  
+  # White test with quadratic terms
+  X_aux <- cbind(X[,2], X[,3], X[,2]^2, X[,3]^2)
+  beta_aux_sim <- solve(t(X_aux) %*% X_aux) %*% t(X_aux) %*% u2_sim # auxiliary regression
+  pred_u2_sim <- X_aux %*% beta_aux_sim
+  
+  SSR_sim <- sum((u2_sim - pred_u2_sim)^2)
+  SST_sim <- sum((u2_sim - mean(u2_sim))^2)
+  R_squared_sim <- 1 - SSR_sim/SST_sim
+  LM[i] = n * R_squared_sim
+  
+  # count rejections
+  if (LM[i] > critval) {
+    nreject <- nreject + 1
+  }
+}
+
+proportion_rejected <- nreject / nsim
+
+```
+```{r echo=FALSE}
+cat("Proportion of rejections of the null hypothesis of homoscedasticity in 10,000 simulations:", round(proportion_rejected * 100, 3), "%\n")
+```
+The results of the B-P and White test match as, in both cases, H0 is rejected 100% of the time at a 1% significance level.
+
+### Question 4: Homoscedastic Case
+
+```{r echo=TRUE}
+nreject_homo = 0
+het_variance <- var(error) #variance comparable with the variance in the heteroscedastic case
+new_sigma <- sqrt(het_variance)
+alfa    = 0.01
+critval = qchisq(1 - alfa, df=3)
+
+# See Rmd file for the whole code
+```
+```{r echo=FALSE}
+for (i in 1:nsim) {
+  # new data generation
+  eps_homo <- rnorm(n, 0, new_sigma)
+  y_homo <- X %*% beta0 + eps_homo
+  
+  # OLS estimation
+  betahat_homo <- solve(t(X) %*% X) %*% t(X) %*% y_homo
+  residuals_homo <- y_homo - X %*% betahat_homo
+  e2_homo <- residuals_homo^2
+  
+  # White test
+  X_aux <- cbind(X[,2], X[,3], X[,2]^2, X[,3]^2) # quadratic terms for White test
+  beta_aux_homo <- solve(t(X_aux) %*% X_aux) %*% t(X_aux) %*% e2_homo
+  pred_e2_homo <- X_aux %*% beta_aux_homo
+  
+  SSR_homo <- sum((e2_homo - pred_e2_homo)^2)
+  SST_homo <- sum((e2_homo - mean(e2_homo))^2)
+  R_squared_homo <- 1 - SSR_homo/SST_homo
+  LM_homo <- n * R_squared_homo
+  
+  # count rejections
+  if (LM_homo > critval) {
+    nreject_homo <- nreject_homo + 1
+  }
+}
+
+proportion_rejected_homo <- nreject_homo / nsim
+
+```
+```{r echo=FALSE}
+cat("Proportion of rejections of the null hypothesis of homoscedasticity in homoscedastic case:", round(proportion_rejected_homo * 100, 3), "%\n")
+```
+
+The result of the experiments with artifically created heteroskedasticity compared to the homoscedastic scenario suggest that the tests reliably detect whether homoscedasticity is present or not. Also, the 1.14% rejection rate across 10,000 samples is close to the significance level of 1%.
+
+
